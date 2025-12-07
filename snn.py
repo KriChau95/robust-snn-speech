@@ -1,2 +1,1 @@
-print("hello world")
-print("Test")
+print("write snn here")
