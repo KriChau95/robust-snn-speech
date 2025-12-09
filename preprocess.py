@@ -57,6 +57,9 @@ def spikes_from_files_with_labels(files, labels, s2s):
     for file, label in tqdm(zip(files, labels), total=len(files)):
         waveform, _ = torchaudio.load(file)
         spike_train = s2s([(waveform, 'None')])[0]
+
+        if spike_train.shape[-1] != 201:
+            continue
         
         spike_pos = (spike_train == 1)
         spike_neg = (spike_train == -1)
@@ -69,8 +72,6 @@ def spikes_from_files_with_labels(files, labels, s2s):
 
 # Initialize Speech2Spikes object``
 s2s = S2S(labels=['None'])
-s2s._default_spec_kwargs['n_mels'] = 80 
-s2s.transform = torchaudio.transforms.MelSpectrogram(**s2s._default_spec_kwargs)
 
 # Convert train and test sets into spikes
 X_train_pos, X_train_neg, y_train = spikes_from_files_with_labels(train_files, train_labels, s2s)
@@ -125,12 +126,3 @@ print("All training and testing data successfully saved.")
 
 # Example: plot first training sample
 plot_spike_train(X_train_pos[0], X_train_neg[0], train_files[0], y_train[0])
-
-
-
-
-
-
-
-
-
