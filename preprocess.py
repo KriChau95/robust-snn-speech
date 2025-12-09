@@ -7,12 +7,13 @@ import torchaudio
 from speech2spikes import S2S
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 from collections import Counter
 
 # Initialize parameters for data, splitting, and loading
 data_path = "speech_commands" # folder containing folders of .wav files
 train_ratio = 0.8
-data_per_class = 300
+data_per_class = 500
 
 # function to get all .wav files needed for training and testing
 # returns list of train files, test files, train labels, test labels
@@ -57,9 +58,6 @@ def spikes_from_files_with_labels(files, labels, s2s):
     for file, label in tqdm(zip(files, labels), total=len(files)):
         waveform, _ = torchaudio.load(file)
         spike_train = s2s([(waveform, 'None')])[0]
-
-        if spike_train.shape[-1] != 201:
-            continue
         
         spike_pos = (spike_train == 1)
         spike_neg = (spike_train == -1)
@@ -88,7 +86,13 @@ def plot_spike_train(pos_spikes, neg_spikes, file_path, label):
     plt.xlabel("Time")
     plt.ylabel("Neuron")
     
-    plt.legend()
+    # Set integer y-axis
+    plt.gca().yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+    
+    # Put legend outside
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    
+    plt.tight_layout()
     plt.show()
 
 # Save the processed spike data and labels
@@ -121,8 +125,6 @@ save_spike_data(X_test_neg, 'X_test_neg.npy')
 save_labels(y_test, 'y_test.npy')
 
 print("All training and testing data successfully saved.")
-
-# --- END OF NEW CODE ---
 
 # Example: plot first training sample
 plot_spike_train(X_train_pos[0], X_train_neg[0], train_files[0], y_train[0])

@@ -15,89 +15,14 @@ from snntorch import functional as SF
 from snntorch import surrogate
 from tqdm import tqdm
 
-save_dir = 'processed_spike_data'
-
-def load_spike_data(filename):
-    loaded_container = np.load(os.path.join(save_dir, filename), allow_pickle=True)
-    return loaded_container
-
-X_train_pos_loaded = load_spike_data('X_train_pos.npy')
-X_train_neg_loaded = load_spike_data('X_train_neg.npy')
-y_train_loaded = np.load(os.path.join(save_dir, 'y_train.npy'))
-
-X_test_pos_loaded = load_spike_data('X_test_pos.npy')
-X_test_neg_loaded = load_spike_data('X_test_neg.npy')
-y_test_loaded = np.load(os.path.join(save_dir, 'y_test.npy'))
-
-print(f"Data Loaded: Train Samples = {len(X_train_pos_loaded)}, Test Samples = {len(X_test_pos_loaded)}")
-
-batch_size = 25
-dtype = torch.float
-
-train_size = len(X_train_pos_loaded)
-test_size = len(X_test_pos_loaded)
-
-num_classes = 2
-
-train_dataset, test_dataset = [], []
-
-label_map = {
-    'cat' : 0,
-    'dog' : 1,
-}
-
 num_inputs = 20
 num_hidden = 256
+num_classes = 2
 
-num_steps = 201
+num_steps = 200
 beta = 0.95
-
-for i in range(train_size):
-
-    blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
-    
-    pos_spikes = X_train_pos_loaded[i]
-    neg_spikes = X_train_neg_loaded[i]
-    label = y_train_loaded[i]
-
-    if label in list(label_map.keys()):
-
-        for neuron, timestep in pos_spikes:
-            blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
-        for neuron, timestep in neg_spikes:
-            blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
-
-        
-        train_dataset.append((blank_tensor, label_map[label]))
-
-for i in range(test_size):
-
-    blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
-    
-    pos_spikes = X_test_pos_loaded[i]
-    neg_spikes = X_test_neg_loaded[i]
-    label = y_test_loaded[i]
-
-    if label in list(label_map.keys()):
-
-        for neuron, timestep in pos_spikes:
-            blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
-        for neuron, timestep in neg_spikes:
-            blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
-        
-        test_dataset.append((blank_tensor, label_map[label]))
-
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-
-print(f"Filtered Data: Train Samples = {len(train_dataset)}, Test Samples = {len(test_dataset)}")
-
-for data, target in train_loader:
-    print(f"Data batch shape: {data.size()}")
-    print(f"Target batch shape: {target.size()}")
-    break
-
 spike_grad = surrogate.fast_sigmoid()
+dtype = torch.float
 
 class Net(nn.Module):
 
@@ -146,85 +71,175 @@ class Net(nn.Module):
 
         return torch.stack(spk4_rec, dim=0)  # output shape: (T, B, N_classes)
 
-net = Net()
 
-high_rate = 200/1000
-low_rate = 20/1000
+def load_spike_data(filename):
+    loaded_container = np.load(os.path.join(save_dir, filename), allow_pickle=True)
+    return loaded_container
 
-criterion = nn.MSELoss()
-optimizer = torch.optim.Adam(net.parameters(), lr=5e-4, betas=(0.9, 0.999))
-
-num_epochs = 40
-train_loss_hist = []
-test_loss_hist = []
-counter = 0
-
-for epoch in tqdm(range(num_epochs)):
-
-    net.train()
-    epoch_loss = 0
-    correct_train = 0
-    total_train  = 0
-
-    for data, targets in tqdm(train_loader):
-
-        local_target_rate = torch.full((data.size(0), num_classes), low_rate, dtype=dtype)
-        local_target_rate[range(data.size(0)), targets] = high_rate
-
-        spk_rec = net(data)
-        actual_rate = torch.sum(spk_rec, dim=0) / num_steps
-
-        loss_val = criterion(actual_rate, local_target_rate)
-        optimizer.zero_grad()
-        loss_val.backward()
-        optimizer.step()
-
-        epoch_loss += loss_val.item()
-
-        total_spikes = spk_rec.sum(dim=0)
-        _, preds = total_spikes.max(1)
-        correct_train += (preds == targets).sum().item()
-        total_train += data.size(0)
     
-    train_loss = epoch_loss / len(train_loader)
-    train_loss_hist.append(train_loss)
-    train_acc = correct_train / total_train
+if __name__== "__main__":
 
-    with torch.no_grad():
-        net.eval()
-        test_loss = 0
-        correct = 0
-        total_samples = 0
-        for data, targets in test_loader:
+    save_dir = 'processed_spike_data'
 
-            test_local_target_rate = torch.full((data.size(0), num_classes), low_rate, dtype=dtype)
-            test_local_target_rate[range(data.size(0)), targets] = high_rate
+    X_train_pos_loaded = load_spike_data('X_train_pos.npy')
+    X_train_neg_loaded = load_spike_data('X_train_neg.npy')
+    y_train_loaded = np.load(os.path.join(save_dir, 'y_train.npy'))
 
-            test_spk_rec = net(data)
-            actual_rate = torch.sum(test_spk_rec, dim=0) / num_steps
+    X_test_pos_loaded = load_spike_data('X_test_pos.npy')
+    X_test_neg_loaded = load_spike_data('X_test_neg.npy')
+    y_test_loaded = np.load(os.path.join(save_dir, 'y_test.npy'))
 
-            loss_val = criterion(actual_rate, test_local_target_rate)
+    print(f"Data Loaded: Train Samples = {len(X_train_pos_loaded)}, Test Samples = {len(X_test_pos_loaded)}")
+    batch_size = 25
 
-            test_loss += loss_val.item()
+    train_size = len(X_train_pos_loaded)
+    test_size = len(X_test_pos_loaded)
 
-            total_spikes = test_spk_rec.sum(dim=0)
+    train_dataset, test_dataset = [], []
+
+    label_map = {
+        'cat' : 0,
+        'dog' : 1,
+    }
+
+    for i in range(train_size):
+
+        blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
+        
+        pos_spikes = X_train_pos_loaded[i]
+        neg_spikes = X_train_neg_loaded[i]
+        label = y_train_loaded[i]
+
+        if label in list(label_map.keys()):
+
+            for neuron, timestep in pos_spikes:
+                blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
+            for neuron, timestep in neg_spikes:
+                blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
+            
+            train_dataset.append((blank_tensor, label_map[label]))
+    
+    for i in range(test_size):
+
+        blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
+        
+        pos_spikes = X_test_pos_loaded[i]
+        neg_spikes = X_test_neg_loaded[i]
+        label = y_test_loaded[i]
+
+        if label in list(label_map.keys()):
+
+            for neuron, timestep in pos_spikes:
+                blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
+            for neuron, timestep in neg_spikes:
+                blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
+            
+            test_dataset.append((blank_tensor, label_map[label]))
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+
+    print(f"Filtered Data: Train Samples = {len(train_dataset)}, Test Samples = {len(test_dataset)}")
+
+    for data, target in train_loader:
+        print(f"Data batch shape: {data.size()}")
+        print(f"Target batch shape: {target.size()}")
+        break
+
+    net = Net()
+
+    high_rate = 200/1000
+    low_rate = 20/1000
+
+    criterion = nn.MSELoss()
+    optimizer = torch.optim.Adam(net.parameters(), lr=5e-4, betas=(0.9, 0.999))
+
+    num_epochs = 40
+    train_loss_hist = []
+    test_loss_hist = []
+    train_acc_hist = []
+    test_acc_hist = []
+    counter = 0
+
+    for epoch in tqdm(range(num_epochs)):
+
+        net.train()
+        epoch_loss = 0
+        correct_train = 0
+        total_train  = 0
+
+        for data, targets in tqdm(train_loader):
+
+            local_target_rate = torch.full((data.size(0), num_classes), low_rate, dtype=dtype)
+            local_target_rate[range(data.size(0)), targets] = high_rate
+
+            spk_rec = net(data)
+            actual_rate = torch.sum(spk_rec, dim=0) / num_steps
+
+            loss_val = criterion(actual_rate, local_target_rate)
+            optimizer.zero_grad()
+            loss_val.backward()
+            optimizer.step()
+
+            epoch_loss += loss_val.item()
+
+            total_spikes = spk_rec.sum(dim=0)
             _, preds = total_spikes.max(1)
-            correct += (preds == targets).sum().item()
-            total_samples += data.size(0)
-    
-        test_loss /= len(test_loader)
-        test_loss_hist.append(test_loss)
-        test_acc = correct / total_samples
+            correct_train += (preds == targets).sum().item()
+            total_train += data.size(0)
+        
+        train_loss = epoch_loss / len(train_loader)
+        train_loss_hist.append(train_loss)
+        train_acc = correct_train / total_train
+        train_acc_hist.append(train_acc)
 
-    print(f"Epoch {epoch} | Train Loss: {train_loss:.6f} | Test Loss: {test_loss_hist[-1]:.6f} | Train Acc: {train_acc*100:.2f}% | Test Acc: {test_acc*100:.2f}%")
+        with torch.no_grad():
+            net.eval()
+            test_loss = 0
+            correct = 0
+            total_samples = 0
+            for data, targets in test_loader:
 
+                test_local_target_rate = torch.full((data.size(0), num_classes), low_rate, dtype=dtype)
+                test_local_target_rate[range(data.size(0)), targets] = high_rate
 
-plt.figure(figsize=(10,5))
-plt.plot(train_loss_hist, label="Train Loss")
-plt.plot(test_loss_hist, label="Test Loss")
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.title("Train vs Test Loss")
-plt.legend()
-plt.grid(True)
-plt.show()
+                test_spk_rec = net(data)
+                actual_rate = torch.sum(test_spk_rec, dim=0) / num_steps
+
+                loss_val = criterion(actual_rate, test_local_target_rate)
+
+                test_loss += loss_val.item()
+
+                total_spikes = test_spk_rec.sum(dim=0)
+                _, preds = total_spikes.max(1)
+                correct += (preds == targets).sum().item()
+                total_samples += data.size(0)
+        
+            test_loss /= len(test_loader)
+            test_loss_hist.append(test_loss)
+            test_acc = correct / total_samples
+            test_acc_hist.append(test_acc)
+
+        print(f"Epoch {epoch} | Train Loss: {train_loss:.6f} | Test Loss: {test_loss_hist[-1]:.6f} | Train Acc: {train_acc*100:.2f}% | Test Acc: {test_acc*100:.2f}%")
+
+    torch.save(net.state_dict(), "snn_nondistorted.pth")
+
+    plt.figure(figsize=(10,5))
+    plt.plot(train_loss_hist, label="Train Loss")
+    plt.plot(test_loss_hist, label="Test Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Train vs Test Loss")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    plt.figure(figsize=(10,5))
+    plt.plot(train_acc_hist, label="Train Accuracy")
+    plt.plot(test_acc_hist, label="Test Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.title("Train vs Test Accuracy")
+    plt.legend()
+    plt.grid(True)
+    plt.show()

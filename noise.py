@@ -1,5 +1,8 @@
 import librosa.display
 import matplotlib.pyplot as plt
+import os
+from tqdm import tqdm
+import numpy as np
 
 def plot_signal_and_augmented_signal(signal, augmented_signal, sr):
     fig, ax = plt.subplots(nrows=2)
@@ -7,6 +10,7 @@ def plot_signal_and_augmented_signal(signal, augmented_signal, sr):
     ax[0].set(title="Original signal")
     librosa.display.waveshow(augmented_signal, sr=sr, ax=ax[1])
     ax[1].set(title="Augmented signal")
+    plt.subplots_adjust(hspace=0.4)
     plt.show()
 
 import random
@@ -23,7 +27,7 @@ def time_stretch(signal, time_stretch_rate):
     return librosa.effects.time_stretch(signal, time_stretch_rate)
 
 def pitch_scale(signal, sr, num_semitones):
-    return librosa.effects.pitch_shift(signal, sr, num_semitones)
+    return librosa.effects.pitch_shift(y=signal, sr=sr, n_steps=num_semitones)
 
 def random_gain(signal, min_factor=0.1, max_factor=0.12):
     gain_rate = random.uniform(min_factor, max_factor)
@@ -33,8 +37,59 @@ def random_gain(signal, min_factor=0.1, max_factor=0.12):
 def invert_polarity(signal):
     return signal * -1
 
-if __name__ == "__main__":
-    signal, sr = librosa.load("speech_commands/cat/0ab3b47d_nohash_0.wav")
-    augmented_signal = add_white_noise(signal, 0.5)
-    sf.write("augmented_audio.wav", augmented_signal, sr)
-    plot_signal_and_augmented_signal(signal, augmented_signal, sr)
+signal, sr = librosa.load("speech_commands/cat/0ab3b47d_nohash_0.wav")
+augmented_signal = pitch_scale(signal, sr, -20)
+sf.write("augmented_audio.wav", augmented_signal, sr)
+plot_signal_and_augmented_signal(signal, augmented_signal, sr)
+
+input_dir = "speech_commands"
+output_dir = "white_noise_speech_commands"
+
+os.makedirs(output_dir, exist_ok=True)
+
+samples_per_word = 500
+
+for word in os.listdir(input_dir):
+
+    word_path = os.path.join(input_dir, word)
+    distorted_word_path = os.path.join(output_dir, word)
+
+    os.makedirs(distorted_word_path, exist_ok=True)
+
+    audio_files = os.listdir(word_path)
+
+    indices = np.random.choice(len(audio_files), size=samples_per_word, replace=False)
+
+    for i in indices:
+        base_file = os.path.join(word_path, audio_files[i])
+        signal, sr = librosa.load(base_file)
+
+        distorted_signal = add_white_noise(signal, noise_percentage_factor=0.5)
+        output_file = os.path.join(distorted_word_path, f"wn_{i}_{os.path.basename(base_file)}")
+        sf.write(output_file, distorted_signal, sr)
+
+input_dir = "speech_commands"
+output_dir = "pitched_speech_commands"
+
+os.makedirs(output_dir, exist_ok=True)
+
+samples_per_word = 500
+
+for word in os.listdir(input_dir):
+
+    word_path = os.path.join(input_dir, word)
+    distorted_word_path = os.path.join(output_dir, word)
+
+    os.makedirs(distorted_word_path, exist_ok=True)
+
+    audio_files = os.listdir(word_path)
+
+    indices = np.random.choice(len(audio_files), size=samples_per_word, replace=False)
+
+    for i in indices:
+        base_file = os.path.join(word_path, audio_files[i])
+        signal, sr = librosa.load(base_file)
+
+        distorted_signal = pitch_scale(signal, sr, random.randint(-5, 5))
+        output_file = os.path.join(distorted_word_path, f"wn_{i}_{os.path.basename(base_file)}")
+        sf.write(output_file, distorted_signal, sr)

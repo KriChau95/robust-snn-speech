@@ -27,8 +27,8 @@ learning_rate = 5e-4
 
 # Binary classification
 label_map = {
-    "cat": 0,
-    "yes": 1,
+    "go": 0,
+    "no": 1,
 }
 num_classes = 2
 valid_labels = set(label_map.keys())
