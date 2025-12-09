@@ -1,0 +1,359 @@
+# The purpose of this file is to preprocess the speech commands dataset into spikes
+
+import os
+import random
+import numpy as np
+import torchaudio
+from speech2spikes import S2S
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+from collections import Counter
+
+# Initialize parameters for data, splitting, and loading
+data_path = "speech_commands" # folder containing folders of .wav files
+train_ratio = 0.8
+data_per_class = 300
+
+# function to get all .wav files needed for training and testing
+# returns list of train files, test files, train labels, test labels
+def get_train_test_files_with_labels(data_path, train_ratio=0.8, data_per_class=100):
+
+    # Initalize empty lists
+    train_files, train_labels = [], []
+    test_files, test_labels = [], []
+
+    classes = os.listdir(data_path) # each class has its own folder, with folder title = label
+    
+    # for each class folder, get files and split into train/test
+    for c in classes:
+
+        cls_path = os.path.join(data_path, c)
+
+        files = [os.path.join(cls_path, f) for f in os.listdir(cls_path)][:data_per_class]
+
+        random.shuffle(files)
+        
+        split_idx = int(len(files) * train_ratio)
+        
+        train_files += files[:split_idx]
+        train_labels += [c] * len(files[:split_idx])
+        
+        test_files += files[split_idx:]
+        test_labels += [c] * len(files[split_idx:])
+    
+    return (train_files, train_labels), (test_files, test_labels)
+
+# Get train and test files with labels
+(train_files, train_labels), (test_files, test_labels) = get_train_test_files_with_labels(data_path, train_ratio, data_per_class)
+
+print(f"Train: {len(train_files)} files, Test: {len(test_files)} files")
+print("Sample train files and labels:", list(zip(train_files[:5], train_labels[:5])))
+
+# function that uses Speech2Spikes to convert .wav files to spike trains
+def spikes_from_files_with_labels(files, labels, s2s):
+
+    pos_list, neg_list, file_labels = [], [], []
+
+    for file, label in tqdm(zip(files, labels), total=len(files)):
+        waveform, _ = torchaudio.load(file)
+        spike_train = s2s([(waveform, 'None')])[0]
+
+        if spike_train.shape[-1] != 201:
+            continue
+        
+        spike_pos = (spike_train == 1)
+        spike_neg = (spike_train == -1)
+        
+        pos_list.append(np.argwhere(spike_pos.squeeze().numpy() == 1))
+        neg_list.append(np.argwhere(spike_neg.squeeze().numpy() == 1))
+        file_labels.append(label)
+
+    return pos_list, neg_list, file_labels
+
+# Initialize Speech2Spikes object``
+s2s = S2S(labels=['None'])
+
+# Convert train and test sets into spikes
+X_train_pos, X_train_neg, y_train = spikes_from_files_with_labels(train_files, train_labels, s2s)
+X_test_pos, X_test_neg, y_test = spikes_from_files_with_labels(test_files, test_labels, s2s)
+
+# function to help visualize spike trains
+def plot_spike_train(pos_spikes, neg_spikes, file_path, label):
+
+    plt.figure(figsize=(12,3))
+    plt.scatter(pos_spikes[:,1], pos_spikes[:,0], color='red', s=1, label='Pos Spike')
+    plt.scatter(neg_spikes[:,1], neg_spikes[:,0], color='blue', s=1, label='Neg Spike')
+    
+    plt.title(f"Spike Train for {label}: {os.path.basename(file_path)}")
+    plt.xlabel("Time")
+    plt.ylabel("Neuron")
+    
+    plt.legend()
+    plt.show()
+
+# Save the processed spike data and labels
+
+# Define the directory for saving data
+save_dir = "processed_spike_data"
+os.makedirs(save_dir, exist_ok=True)
+
+# function to save spike data
+def save_spike_data(data_list, filename):
+    data_to_save = np.array(data_list, dtype=object) 
+    np.save(os.path.join(save_dir, filename), data_to_save, allow_pickle=True)
+
+# function to save label data
+def save_labels(data_list, filename):
+    np.save(os.path.join(save_dir, filename), np.array(data_list))
+
+# 1. Save training data
+
+save_spike_data(X_train_pos, 'X_train_pos.npy')
+save_spike_data(X_train_neg, 'X_train_neg.npy')
+
+save_labels(y_train, 'y_train.npy')
+
+# 2. Save testing data
+
+save_spike_data(X_test_pos, 'X_test_pos.npy')
+save_spike_data(X_test_neg, 'X_test_neg.npy')
+
+save_labels(y_test, 'y_test.npy')
+
+print("All training and testing data successfully saved.")
+
+# --- END OF NEW CODE ---
+
+# Example: plot first training sample
+plot_spike_train(X_train_pos[0], X_train_neg[0], train_files[0], y_train[0])
+
+import snntorch as snn
+from snntorch import spikeplot as splt
+from snntorch import spikegen
+
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+import os
+
+from snntorch import functional as SF
+from snntorch import surrogate
+from tqdm import tqdm
+
+save_dir = 'processed_spike_data'
+
+def load_spike_data(filename):
+    loaded_container = np.load(os.path.join(save_dir, filename), allow_pickle=True)
+    return loaded_container
+
+X_train_pos_loaded = load_spike_data('X_train_pos.npy')
+X_train_neg_loaded = load_spike_data('X_train_neg.npy')
+y_train_loaded = np.load(os.path.join(save_dir, 'y_train.npy'))
+
+X_test_pos_loaded = load_spike_data('X_test_pos.npy')
+X_test_neg_loaded = load_spike_data('X_test_neg.npy')
+y_test_loaded = np.load(os.path.join(save_dir, 'y_test.npy'))
+
+print(f"Data Loaded: Train Samples = {len(X_train_pos_loaded)}, Test Samples = {len(X_test_pos_loaded)}")
+
+batch_size = 25
+dtype = torch.float
+
+train_size = len(X_train_pos_loaded)
+test_size = len(X_test_pos_loaded)
+
+num_classes = 2
+
+train_dataset, test_dataset = [], []
+
+label_map = {
+    'cat' : 0,
+    'dog' : 1,
+}
+
+num_inputs = 20
+num_hidden = 256
+
+num_steps = 201
+beta = 0.95
+
+for i in range(train_size):
+
+    blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
+    
+    pos_spikes = X_train_pos_loaded[i]
+    neg_spikes = X_train_neg_loaded[i]
+    label = y_train_loaded[i]
+
+    if label in list(label_map.keys()):
+
+        for neuron, timestep in pos_spikes:
+            blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
+        for neuron, timestep in neg_spikes:
+            blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
+
+        
+        train_dataset.append((blank_tensor, label_map[label]))
+
+for i in range(test_size):
+
+    blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
+    
+    pos_spikes = X_test_pos_loaded[i]
+    neg_spikes = X_test_neg_loaded[i]
+    label = y_test_loaded[i]
+
+    if label in list(label_map.keys()):
+
+        for neuron, timestep in pos_spikes:
+            blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
+        for neuron, timestep in neg_spikes:
+            blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
+        
+        test_dataset.append((blank_tensor, label_map[label]))
+
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+
+print(f"Filtered Data: Train Samples = {len(train_dataset)}, Test Samples = {len(test_dataset)}")
+
+for data, target in train_loader:
+    print(f"Data batch shape: {data.size()}")
+    print(f"Target batch shape: {target.size()}")
+    break
+
+spike_grad = surrogate.fast_sigmoid()
+
+class Net(nn.Module):
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.fc1 = nn.Linear(num_inputs*2, num_hidden)
+        self.lif1 = snn.Leaky(beta=beta, spike_grad=spike_grad)
+
+        self.fc2 = nn.Linear(num_hidden, num_hidden)
+        self.lif2 = snn.Leaky(beta=beta, spike_grad=spike_grad)
+
+        self.fc3 = nn.Linear(num_hidden, num_hidden)
+        self.lif3 = snn.Leaky(beta=beta, spike_grad=spike_grad)
+
+        self.fc4 = nn.Linear(num_hidden, num_classes)
+        self.lif4 = snn.Leaky(beta=beta, spike_grad=spike_grad)
+    
+    def forward(self, x):
+
+        mem1 = self.lif1.init_leaky()
+        mem2 = self.lif2.init_leaky()
+        mem3 = self.lif3.init_leaky()
+        mem4 = self.lif4.init_leaky()
+
+        spk4_rec = []
+
+        for step in range(num_steps):
+
+            x_t = x[:, :, :, step].reshape(x.size(0), -1)
+
+            cur1 = self.fc1(x_t)
+            spk1, mem1 = self.lif1(cur1, mem1)
+
+            cur2 = self.fc2(spk1)
+            spk2, mem2 = self.lif2(cur2, mem2)
+
+            cur3 = self.fc3(spk2)
+            spk3, mem3 = self.lif3(cur3, mem3)
+
+            cur4 = self.fc4(spk3)
+            spk4, mem4 = self.lif4(cur4, mem4)
+
+            spk4_rec.append(spk4)
+
+        return torch.stack(spk4_rec, dim=0)  # output shape: (T, B, N_classes)
+
+net = Net()
+
+high_rate = 200/1000
+low_rate = 20/1000
+
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(net.parameters(), lr=5e-4, betas=(0.9, 0.999))
+
+num_epochs = 40
+train_loss_hist = []
+test_loss_hist = []
+counter = 0
+
+for epoch in tqdm(range(num_epochs)):
+
+    net.train()
+    epoch_loss = 0
+    correct_train = 0
+    total_train  = 0
+
+    for data, targets in tqdm(train_loader):
+
+        local_target_rate = torch.full((data.size(0), num_classes), low_rate, dtype=dtype)
+        local_target_rate[range(data.size(0)), targets] = high_rate
+
+        spk_rec = net(data)
+        actual_rate = torch.sum(spk_rec, dim=0) / num_steps
+
+        loss_val = criterion(actual_rate, local_target_rate)
+        optimizer.zero_grad()
+        loss_val.backward()
+        optimizer.step()
+
+        epoch_loss += loss_val.item()
+
+        total_spikes = spk_rec.sum(dim=0)
+        _, preds = total_spikes.max(1)
+        correct_train += (preds == targets).sum().item()
+        total_train += data.size(0)
+    
+    train_loss = epoch_loss / len(train_loader)
+    train_loss_hist.append(train_loss)
+    train_acc = correct_train / total_train
+
+    with torch.no_grad():
+        net.eval()
+        test_loss = 0
+        correct = 0
+        total_samples = 0
+        for data, targets in test_loader:
+
+            test_local_target_rate = torch.full((data.size(0), num_classes), low_rate, dtype=dtype)
+            test_local_target_rate[range(data.size(0)), targets] = high_rate
+
+            test_spk_rec = net(data)
+            actual_rate = torch.sum(test_spk_rec, dim=0) / num_steps
+
+            loss_val = criterion(actual_rate, test_local_target_rate)
+
+            test_loss += loss_val.item()
+
+            total_spikes = test_spk_rec.sum(dim=0)
+            _, preds = total_spikes.max(1)
+            correct += (preds == targets).sum().item()
+            total_samples += data.size(0)
+    
+        test_loss /= len(test_loader)
+        test_loss_hist.append(test_loss)
+        test_acc = correct / total_samples
+
+    print(f"Epoch {epoch} | Train Loss: {train_loss:.6f} | Test Loss: {test_loss_hist[-1]:.6f} | Train Acc: {train_acc*100:.2f}% | Test Acc: {test_acc*100:.2f}%")
+
+
+plt.figure(figsize=(10,5))
+plt.plot(train_loss_hist, label="Train Loss")
+plt.plot(test_loss_hist, label="Test Loss")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.title("Train vs Test Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
