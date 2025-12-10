@@ -29,6 +29,7 @@ wn_save_dir = 'pitched_processed_spike_data'
 
 class Net(nn.Module):
 
+    # Define network layers (4 fully connected layers with LIF neurons)
     def __init__(self):
 
         super().__init__()
@@ -45,6 +46,7 @@ class Net(nn.Module):
         self.fc4 = nn.Linear(num_hidden, num_classes)
         self.lif4 = snn.Leaky(beta=beta, spike_grad=spike_grad)
     
+    # Run the network over all time steps and record output spikes
     def forward(self, x):
 
         mem1 = self.lif1.init_leaky()
@@ -54,6 +56,7 @@ class Net(nn.Module):
 
         spk4_rec = []
 
+        # Iterate over time dimension and update spiking layers
         for step in range(num_steps):
 
             x_t = x[:, :, :, step].reshape(x.size(0), -1)
@@ -72,13 +75,14 @@ class Net(nn.Module):
 
             spk4_rec.append(spk4)
 
-        return torch.stack(spk4_rec, dim=0)  # output shape: (T, B, N_classes)
+        return torch.stack(spk4_rec, dim=0)
 
-
+# Load spike data from the original (clean) dataset
 def load_spike_data(filename):
     loaded_container = np.load(os.path.join(save_dir, filename), allow_pickle=True)
     return loaded_container
 
+# Load spike data from the pitched (augmented) dataset
 def load_wn_spike_data(filename):
     loaded_container = np.load(os.path.join(wn_save_dir, filename), allow_pickle=True)
     return loaded_container
@@ -118,6 +122,7 @@ if __name__== "__main__":
         'dog' : 1,
     }
 
+    # Build spike tensors and labels for each sample in the original training set
     for i in range(train_size):
 
         blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
@@ -128,13 +133,15 @@ if __name__== "__main__":
 
         if label in list(label_map.keys()):
 
+            # Fill positive/negative channel with spikes from pos_spikes/neg_spikes list
             for neuron, timestep in pos_spikes:
-                blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
+                blank_tensor[0, neuron, timestep-1] = 1.0 
             for neuron, timestep in neg_spikes:
-                blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
+                blank_tensor[1, neuron, timestep-1] = 1.0
             
             train_dataset.append((blank_tensor, label_map[label]))
     
+    # Build spike tensors and labels for each sample in the original test set
     for i in range(test_size):
 
         blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
@@ -144,14 +151,16 @@ if __name__== "__main__":
         label = y_test_loaded[i]
 
         if label in list(label_map.keys()):
-
+            
+            # Fill positive/negative channel with spikes from pos_spikes/neg_spikes list
             for neuron, timestep in pos_spikes:
-                blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
+                blank_tensor[0, neuron, timestep-1] = 1.0
             for neuron, timestep in neg_spikes:
-                blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
+                blank_tensor[1, neuron, timestep-1] = 1.0
             
             test_dataset.append((blank_tensor, label_map[label]))
 
+    # Build spike tensors and labels for each sample in the pitched training set
     for i in range(wn_train_size):
         
         blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
@@ -161,14 +170,16 @@ if __name__== "__main__":
         label = wn_y_train_loaded[i]
 
         if label in list(label_map.keys()):
-
+            
+            # Fill positive/negative channel with spikes from pos_spikes/neg_spikes list
             for neuron, timestep in pos_spikes:
-                blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
+                blank_tensor[0, neuron, timestep-1] = 1.0
             for neuron, timestep in neg_spikes:
-                blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
+                blank_tensor[1, neuron, timestep-1] = 1.0
             
             wn_train_dataset.append((blank_tensor, label_map[label]))
     
+    # Build spike tensors and labels for each sample in the pitched test set
     for i in range(wn_test_size):
         
         blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
@@ -178,11 +189,12 @@ if __name__== "__main__":
         label = wn_y_test_loaded[i]
 
         if label in list(label_map.keys()):
-
+            
+            # Fill positive/negative channel with spikes from pos_spikes/neg_spikes list
             for neuron, timestep in pos_spikes:
-                blank_tensor[0, neuron, timestep-1] = 1.0  # pos channel
+                blank_tensor[0, neuron, timestep-1] = 1.0
             for neuron, timestep in neg_spikes:
-                blank_tensor[1, neuron, timestep-1] = 1.0  # neg channel
+                blank_tensor[1, neuron, timestep-1] = 1.0
             
             wn_test_dataset.append((blank_tensor, label_map[label]))
 
@@ -194,6 +206,7 @@ if __name__== "__main__":
 
     print(f"Filtered Data: Train Samples = {len(full_train_dataset)}, Test Samples = {len(full_test_dataset)}")
 
+    # Loop through one batch to check tensor shapes
     for data, target in train_loader:
         print(f"Data batch shape: {data.size()}")
         print(f"Target batch shape: {target.size()}")
@@ -214,6 +227,7 @@ if __name__== "__main__":
     test_acc_hist = []
     counter = 0
 
+    # Train and evaluate the network for multiple epochs
     for epoch in tqdm(range(num_epochs)):
 
         net.train()
@@ -221,6 +235,7 @@ if __name__== "__main__":
         correct_train = 0
         total_train  = 0
 
+        # Training loop over all batches
         for data, targets in tqdm(train_loader):
 
             local_target_rate = torch.full((data.size(0), num_classes), low_rate, dtype=dtype)
@@ -251,6 +266,8 @@ if __name__== "__main__":
             test_loss = 0
             correct = 0
             total_samples = 0
+
+            # Evaluation loop over all test batches
             for data, targets in test_loader:
 
                 test_local_target_rate = torch.full((data.size(0), num_classes), low_rate, dtype=dtype)

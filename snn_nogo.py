@@ -9,39 +9,36 @@ import snntorch as snn
 from snntorch import surrogate, functional as SF
 from tqdm import tqdm
 
-# =========================
-# CONFIG
-# =========================
-
-save_dir = "processed_spike_data"   # where your .npy files are
+save_dir = "processed_spike_data"
 batch_size = 25
 dtype = torch.float
 
-num_inputs = 80     # neurons (rows)
-num_steps = 200     # time steps (columns)
+num_inputs = 80
+num_steps = 200
 
 num_hidden = 256
-beta = 0.95         # LIF decay
+beta = 0.95
 num_epochs = 20
 learning_rate = 5e-4
 
-# Binary classification
+# choose what two words to use
 label_map = {
     "go": 0,
     "no": 1,
 }
+
 num_classes = 2
 valid_labels = set(label_map.keys())
 
-# =========================
-# DATA LOADING
-# =========================
 
+# Load spike data (pos/neg spike arrays) from disk
 def load_spike_data(filename):
     return np.load(os.path.join(save_dir, filename), allow_pickle=True)
 
+# Load label arrays from disk
 def load_labels(filename):
     return np.load(os.path.join(save_dir, filename), allow_pickle=True)
+
 
 print("Loading spike data from:", save_dir)
 X_train_pos_loaded = load_spike_data("X_train_pos.npy")
@@ -54,33 +51,29 @@ y_test_loaded = load_labels("y_test.npy")
 
 print(f"Data Loaded: Train Samples = {len(X_train_pos_loaded)}, Test Samples = {len(X_test_pos_loaded)}")
 
-# =========================
-# BUILD DATASETS
-# Each sample -> tensor [80, 200], label int {0,1}
-# =========================
-
 train_dataset, test_dataset = [], []
 
 train_size = len(X_train_pos_loaded)
 test_size = len(X_test_pos_loaded)
 
-# ---- build train dataset ----
+# Convert list-of-spikes format into [80, 200] spike tensors + integer labels
 for i in range(train_size):
     blank_tensor = torch.zeros((num_inputs, num_steps), dtype=dtype)
 
-    pos_spikes = X_train_pos_loaded[i]   # array of [num_spikes, 2] (neuron, timestep)
+    pos_spikes = X_train_pos_loaded[i]
     neg_spikes = X_train_neg_loaded[i]
     label = y_train_loaded[i]
 
     if label in valid_labels:
-        # positive spikes
+
+        # positive spikes: set entries to +1 at (neuron, timestep)
         for neuron, timestep in pos_spikes:
             n = int(neuron)
-            t = int(timestep) - 1   # timesteps 1..200 -> 0..199
+            t = int(timestep) - 1
             if 0 <= n < num_inputs and 0 <= t < num_steps:
                 blank_tensor[n, t] = 1.0
 
-        # negative spikes (keep as -1; you can experiment with removing them later)
+        # negative spikes: set entries to -1 at (neuron, timestep)
         for neuron, timestep in neg_spikes:
             n = int(neuron)
             t = int(timestep) - 1
@@ -89,7 +82,7 @@ for i in range(train_size):
 
         train_dataset.append((blank_tensor, label_map[label]))
 
-# ---- build test dataset ----
+# Same processing as above but for test data
 for i in range(test_size):
     blank_tensor = torch.zeros((num_inputs, num_steps), dtype=dtype)
 
@@ -117,18 +110,16 @@ print(f"Filtered Data: Train Samples = {len(train_dataset)}, Test Samples = {len
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
 
-# quick sanity check
+# Quick check on batch shapes
 for data, target in train_loader:
     print(f"Example batch shapes -> data: {data.size()}, target: {target.size()}")
     break
 
-# =========================
-# MODEL DEFINITION
-# =========================
-
 spike_grad = surrogate.fast_sigmoid()
 
 class Net(nn.Module):
+
+    # Define a 4-layer fully connected SNN with LIF neurons
     def __init__(self):
         super().__init__()
 
@@ -144,6 +135,7 @@ class Net(nn.Module):
         self.fc4 = nn.Linear(num_hidden, num_classes)
         self.lif4 = snn.Leaky(beta=beta, spike_grad=spike_grad)
 
+    # Run the network over all time steps and return output spike trains
     def forward(self, x):
         """
         x: [batch, 80, 200]
@@ -156,8 +148,9 @@ class Net(nn.Module):
 
         spk4_rec = []
 
+        # Step through time and update LIF layers at each step
         for step in range(num_steps):
-            x_t = x[:, :, step]    # [B, 80]
+            x_t = x[:, :, step]
 
             cur1 = self.fc1(x_t)
             spk1, mem1 = self.lif1(cur1, mem1)
@@ -173,27 +166,19 @@ class Net(nn.Module):
 
             spk4_rec.append(spk4)
 
-        # shape: [T, B, num_classes]
         return torch.stack(spk4_rec, dim=0)
 
-# =========================
-# TRAINING SETUP
-# =========================
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 net = Net().to(device)
 
-# Classification loss on spike counts (big fix vs MSE!)
 criterion = SF.ce_count_loss()
 
 optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate, betas=(0.9, 0.999))
 
-# =========================
-# TRAINING LOOP
-# =========================
-
+# Main training + testing loop across epochs
 for epoch in range(num_epochs):
     net.train()
     total_loss = 0.0
@@ -202,11 +187,12 @@ for epoch in range(num_epochs):
 
     print(f"\nEpoch {epoch+1}/{num_epochs}")
 
+    # Training loop over all mini-batches
     for data, targets in tqdm(train_loader, desc="Train", leave=False):
         data = data.to(device)
         targets = targets.to(device)
 
-        spk_rec = net(data)                  # [T, B, 2]
+        spk_rec = net(data)
         loss_val = criterion(spk_rec, targets)
         acc = SF.accuracy_rate(spk_rec, targets)
 
@@ -222,12 +208,12 @@ for epoch in range(num_epochs):
     train_loss = total_loss / total_samples
     train_acc = total_acc / total_samples
 
-    # ---- EVAL ON TEST SET ----
     net.eval()
     test_loss = 0.0
     test_acc = 0.0
     test_samples = 0
 
+    # Evaluation loop on the test set
     with torch.no_grad():
         for data, targets in tqdm(test_loader, desc="Test", leave=False):
             data = data.to(device)

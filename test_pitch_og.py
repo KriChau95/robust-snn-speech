@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 import os
 import numpy as np
 
+# Load the SNN trained with pitch-augmented data and set to eval mode
 net = Net() 
 net.load_state_dict(torch.load("pitch_snn.pth"))
 net.eval()
@@ -15,6 +16,7 @@ low_rate = 20/1000
 num_steps = 200
 dtype = torch.float
 
+# Load spike data arrays from disk given a filename
 def load_spike_data(filename):
     loaded_container = np.load(os.path.join(save_dir, filename), allow_pickle=True)
     return loaded_container
@@ -42,6 +44,7 @@ label_map = {
     'dog' : 1,
 }
 
+# Build spike tensors + labels for each sample in the training set
 for i in range(train_size):
 
     blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
@@ -59,6 +62,7 @@ for i in range(train_size):
         
         dataset.append((blank_tensor, label_map[label]))
 
+# Build spike tensors + labels for each sample in the test set
 for i in range(test_size):
 
     blank_tensor = torch.zeros((2, num_inputs, num_steps), dtype=dtype)  # 2 channels: 0=pos, 1=neg
@@ -85,6 +89,8 @@ with torch.no_grad():
     test_loss = 0
     correct = 0
     total_samples = 0
+
+    # Loop over all original (non-pitched) samples and compute accuracy
     for data, targets in original_data_loader:
 
         test_local_target_rate = torch.full((data.size(0), num_classes), low_rate, dtype=dtype)

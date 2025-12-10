@@ -1,4 +1,3 @@
-# The purpose of this file is to preprocess the speech commands dataset into spikes
 import os
 import random
 import numpy as np
@@ -9,7 +8,7 @@ import matplotlib.pyplot as plt
 from collections import Counter
 
 # Initialize parameters for data, splitting, and loading
-data_path = "white_noise_speech_commands" # folder containing folders of .wav files
+data_path = "white_noise_speech_commands"
 train_ratio = 0.8
 data_per_class = 500
 
@@ -21,7 +20,7 @@ def get_train_test_files_with_labels(data_path, train_ratio=0.8, data_per_class=
     train_files, train_labels = [], []
     test_files, test_labels = [], []
 
-    classes = os.listdir(data_path) # each class has its own folder, with folder title = label
+    classes = os.listdir(data_path)
     
     # for each class folder, get files and split into train/test
     for c in classes:
@@ -64,16 +63,13 @@ def spikes_from_files_with_labels(files, labels, s2s):
         raw_neg = np.argwhere(spike_neg.squeeze().numpy() == 1)
 
         if raw_pos.size > 0 or raw_neg.size > 0:
-            # find original max time
             max_t = 0
             if raw_pos.size > 0:
                 max_t = max(max_t, raw_pos[:,1].max())
             if raw_neg.size > 0:
                 max_t = max(max_t, raw_neg[:,1].max())
 
-            # avoid division by zero
             if max_t > 0:
-                # scale to [0,199]
                 raw_pos[:,1] = (raw_pos[:,1] * 199 / max_t).astype(int)
                 raw_neg[:,1] = (raw_neg[:,1] * 199 / max_t).astype(int)
 
@@ -84,7 +80,7 @@ def spikes_from_files_with_labels(files, labels, s2s):
 
     return pos_list, neg_list, file_labels
 
-# Initialize Speech2Spikes object``
+# Initialize Speech2Spikes object
 s2s = S2S(labels=['None'])
 
 # Convert train and test sets into spikes
@@ -120,14 +116,14 @@ def save_spike_data(data_list, filename):
 def save_labels(data_list, filename):
     np.save(os.path.join(save_dir, filename), np.array(data_list))
 
-# 1. Save training data
+# Save training data
 
 save_spike_data(X_train_pos, 'X_train_pos.npy')
 save_spike_data(X_train_neg, 'X_train_neg.npy')
 
 save_labels(y_train, 'y_train.npy')
 
-# 2. Save testing data
+# Save testing data
 
 save_spike_data(X_test_pos, 'X_test_pos.npy')
 save_spike_data(X_test_neg, 'X_test_neg.npy')
@@ -136,7 +132,5 @@ save_labels(y_test, 'y_test.npy')
 
 print("All training and testing data successfully saved.")
 
-# --- END OF NEW CODE ---
-# Example: plot first training sample
 print(len(X_train_pos))
 plot_spike_train(X_train_pos[0], X_train_neg[0], train_files[0], y_train[0])

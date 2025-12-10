@@ -79,8 +79,7 @@ class Net(nn.Module):
 net = Net().to(device)
 
 # pass data into the network, sum the spikes over time
-# and compare the neuron with the highest number of spikes
-# with the target
+# and compare the neuron with the highest number of spikes with the target
 
 def print_batch_accuracy(data, targets, train=False):
     output, _ = net(data.view(batch_size, -1))

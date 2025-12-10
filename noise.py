@@ -3,7 +3,12 @@ import matplotlib.pyplot as plt
 import os
 from tqdm import tqdm
 import numpy as np
+import random
+import librosa
+import numpy as np
+import soundfile as sf
 
+# Plot original and augmented waveforms one above the other
 def plot_signal_and_augmented_signal(signal, augmented_signal, sr):
     fig, ax = plt.subplots(nrows=2)
     librosa.display.waveshow(signal, sr=sr, ax=ax[0])
@@ -13,27 +18,27 @@ def plot_signal_and_augmented_signal(signal, augmented_signal, sr):
     plt.subplots_adjust(hspace=0.4)
     plt.show()
 
-import random
-import librosa
-import numpy as np
-import soundfile as sf
-
+# Add Gaussian white noise scaled by noise_percentage_factor
 def add_white_noise(signal, noise_percentage_factor):
     noise = np.random.normal(0, signal.std(), signal.size)
     augmented_signal = signal + noise * noise_percentage_factor
     return augmented_signal
 
+# Stretch/compress the audio in time without changing pitch
 def time_stretch(signal, time_stretch_rate):
     return librosa.effects.time_stretch(signal, time_stretch_rate)
 
+# Shift the pitch of the audio by num_semitones
 def pitch_scale(signal, sr, num_semitones):
     return librosa.effects.pitch_shift(y=signal, sr=sr, n_steps=num_semitones)
 
+# Randomly scale the volume of the signal between min_factor and max_factor
 def random_gain(signal, min_factor=0.1, max_factor=0.12):
     gain_rate = random.uniform(min_factor, max_factor)
     augmented_signal = signal * gain_rate
     return augmented_signal
 
+# Flip the signal vertically (invert its amplitude)
 def invert_polarity(signal):
     return signal * -1
 
@@ -49,6 +54,7 @@ os.makedirs(output_dir, exist_ok=True)
 
 samples_per_word = 500
 
+# Loop over each word subfolder and create white-noise-augmented versions
 for word in os.listdir(input_dir):
 
     word_path = os.path.join(input_dir, word)
@@ -60,6 +66,7 @@ for word in os.listdir(input_dir):
 
     indices = np.random.choice(len(audio_files), size=samples_per_word, replace=False)
 
+    # For each selected file, load it, add noise, and save the result
     for i in indices:
         base_file = os.path.join(word_path, audio_files[i])
         signal, sr = librosa.load(base_file)
@@ -75,6 +82,7 @@ os.makedirs(output_dir, exist_ok=True)
 
 samples_per_word = 500
 
+# Loop over each word subfolder and create pitch-shifted versions
 for word in os.listdir(input_dir):
 
     word_path = os.path.join(input_dir, word)
@@ -86,6 +94,7 @@ for word in os.listdir(input_dir):
 
     indices = np.random.choice(len(audio_files), size=samples_per_word, replace=False)
 
+    # For each selected file, load it, apply random pitch shift, and save the result
     for i in indices:
         base_file = os.path.join(word_path, audio_files[i])
         signal, sr = librosa.load(base_file)
