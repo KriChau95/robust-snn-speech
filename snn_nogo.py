@@ -23,8 +23,8 @@ learning_rate = 5e-4
 
 # choose what two words to use
 label_map = {
-    "go": 0,
-    "no": 1,
+    "no": 0,
+    "go": 1,
 }
 
 num_classes = 2
