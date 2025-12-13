@@ -42,11 +42,6 @@ def random_gain(signal, min_factor=0.1, max_factor=0.12):
 def invert_polarity(signal):
     return signal * -1
 
-signal, sr = librosa.load("speech_commands/cat/0ab3b47d_nohash_0.wav")
-augmented_signal = pitch_scale(signal, sr, -20)
-sf.write("augmented_audio.wav", augmented_signal, sr)
-plot_signal_and_augmented_signal(signal, augmented_signal, sr)
-
 input_dir = "speech_commands"
 output_dir = "white_noise_speech_commands"
 
