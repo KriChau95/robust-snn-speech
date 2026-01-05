@@ -44,3 +44,12 @@ pip install numpy torch torchaudio snntorch speech2spikes librosa soundfile matp
    - ```python test_og_wn.py``` (white-noise spikes), or
    - ```python test_og_pitch.py``` (pitched spikes); each test script reports accuracy and is also located in the snn folder.
 5. Similar approach used for baseline ANN for comparison against the SNNs.
+
+## Detailed Technical Report
+
+<a href="./Robust_Binary_Audio_Classification_with_SNNs.pdf">
+  <img src="./paper_3.png" width="300">
+</a>
+
+[Paper: Robust Binary Audio Classification with SNNs](Robust_Binary_Audio_Classification_with_SNNs.pdf)
+
