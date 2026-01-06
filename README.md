@@ -47,9 +47,5 @@ pip install numpy torch torchaudio snntorch speech2spikes librosa soundfile matp
 
 ## Detailed Technical Report
 
-<a href="./Robust_Binary_Audio_Classification_with_SNNs.pdf">
-  <img src="./paper_3.png" width="300">
-</a>
-
 [Paper: Robust Binary Audio Classification with SNNs](Robust_Binary_Audio_Classification_with_SNNs.pdf)
 
